@@ -91,6 +91,8 @@ Point `okf.config.yaml` at it: `adapter: path/to/my_adapter.py:MyAdapter`. See
 - **Planned (Phase 7):** semantic RAG — embeddings index + `okf ask` for meaning-based Q&A.
 - **Planned (Phase 8):** MCP server — expose the vault as tools for Claude Code / Desktop / any client.
 
+See [`docs/roadmap.md`](docs/roadmap.md) for details.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

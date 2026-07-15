@@ -16,6 +16,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Text Processing :: Markup :: Markdown",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
     "PyYAML>=6.0",
@@ -33,6 +35,7 @@ okf = "okfkit.cli:main"
 [project.urls]
 Homepage = "https://github.com/olivermorgan2/okf-wiki-kit"
 Issues = "https://github.com/olivermorgan2/okf-wiki-kit/issues"
+Repository = "https://github.com/olivermorgan2/okf-wiki-kit"
 
 [tool.setuptools.packages.find]
 include = ["okfkit*"]
