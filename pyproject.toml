@@ -26,7 +26,11 @@ dependencies = [
 [project.optional-dependencies]
 # LLM enrichment backends — install only what you use.
 anthropic = ["anthropic>=0.40"]
-openai = ["openai>=1.40"]          # also covers OpenRouter (OpenAI-compatible)
+openai = ["openai>=1.40"]          # also covers OpenRouter (OpenAI-compatible) and OpenAI embeddings
+# Semantic RAG (`okf index` / `okf search` / `okf ask`) — install only what you use.
+rag = ["numpy>=1.24"]
+voyage = ["voyageai>=0.3"]
+local-embeddings = ["numpy>=1.24", "model2vec>=0.3"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]

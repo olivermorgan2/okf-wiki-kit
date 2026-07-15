@@ -54,7 +54,11 @@ class Backend:
                               "no prose, no code fences.")]
         raise ValueError("Could not parse JSON from model after 2 attempts.")
 
-    def _complete(self, system, turns, max_tokens):
+    def text(self, system, user, max_tokens=2000):
+        """Plain-text completion (no JSON coercion) — used by `okf ask` (serve.rag)."""
+        return self._complete(system, [("user", user)], max_tokens, json_mode=False).strip()
+
+    def _complete(self, system, turns, max_tokens, json_mode=True):
         if self.provider == "anthropic":
             messages = [{"role": r, "content": c} for r, c in turns]
             with self.client.messages.stream(
@@ -66,10 +70,13 @@ class Backend:
         messages = [{"role": "system", "content": system}]
         messages += [{"role": r, "content": c} for r, c in turns]
         kwargs = dict(model=self.model, max_tokens=max_tokens, messages=messages)
-        try:
-            resp = self.client.chat.completions.create(
-                response_format={"type": "json_object"}, **kwargs)
-        except Exception:
+        if json_mode:
+            try:
+                resp = self.client.chat.completions.create(
+                    response_format={"type": "json_object"}, **kwargs)
+            except Exception:
+                resp = self.client.chat.completions.create(**kwargs)
+        else:
             resp = self.client.chat.completions.create(**kwargs)
         return resp.choices[0].message.content or ""
 

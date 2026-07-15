@@ -14,6 +14,7 @@ class Config:
     link_style: str = "wikilink"
     link_inference: dict = field(default_factory=dict)
     enrich: dict = field(default_factory=dict)
+    serve: dict = field(default_factory=dict)   # `serve:` block (rag / mcp settings)
     base_dir: str = "."          # directory the config lives in (for resolving relative paths)
 
     def resolve(self, path: str) -> str:
@@ -41,6 +42,7 @@ def load(path: str = "okf.config.yaml") -> Config:
     cfg.link_style = data.get("link_style", cfg.link_style)
     cfg.link_inference = data.get("link_inference") or {}
     cfg.enrich = data.get("enrich") or {}
+    cfg.serve = data.get("serve") or {}
 
     # resolve any path-like adapter option relative to the config file
     if "path" in cfg.adapter_options:

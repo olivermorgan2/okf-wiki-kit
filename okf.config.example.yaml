@@ -40,3 +40,20 @@ enrich:
   base_url: null           # OpenAI-compatible base URL (default OpenRouter)
   describe_types: []       # node types to get a one-line `description:` e.g. ["Chapter","Case Study"]
   canonicalize_type: ""    # node type to merge duplicates/synonyms, e.g. "Concept" ("" = off)
+
+# ---------------------------------------------------------------------------
+# Serving the built vault to LLMs/agents (optional).
+# `rag`: semantic index over the built vault — `okf index` / `okf search` / `okf ask`.
+# Requires the "rag" extra (numpy) plus an embedding provider:
+#   voyage (VOYAGE_API_KEY) | openai (OPENAI_API_KEY) | local (model2vec, no key).
+# The index is written to `.okf/` next to this config (never inside the vault).
+# ---------------------------------------------------------------------------
+serve:
+  rag:
+    embedding:
+      provider: null       # "voyage" | "openai" | "local" ; null = auto-detect from env keys
+      model: null          # default: voyage-3.5-lite / text-embedding-3-small / minishlab/potion-base-8M
+      base_url: null       # OpenAI-compatible embeddings URL (default api.openai.com — NOT OpenRouter)
+    chunk_max_chars: 4000  # split notes longer than this at ##/### headings
+    exclude_types: [Index, Home]   # note types to skip when indexing
+    top_k: 8               # default number of notes for `okf search` / `okf ask`
