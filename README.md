@@ -102,9 +102,9 @@ OKF vault without a config, and `--no-rag` for graph tools only.
 
 ## Roadmap
 
-- **Now:** engine, markdown-folder adapter, custom adapters, link inference, LLM enrichment, CLI.
-- **Planned (Phase 7):** semantic RAG — embeddings index + `okf ask` for meaning-based Q&A.
-- **Planned (Phase 8):** MCP server — expose the vault as tools for Claude Code / Desktop / any client.
+- **Build** — engine, markdown-folder adapter, custom adapters, link inference, LLM enrichment, CLI.
+- **Semantic RAG (Phase 7) ✓** — `okf index` / `okf search` / `okf ask`: embeddings index + retrieval-augmented Q&A.
+- **MCP server (Phase 8) ✓** — `okf serve`: expose the vault as read-only tools for Claude Code / Desktop / any MCP client.
 
 See [`docs/roadmap.md`](docs/roadmap.md) for details.
 

@@ -1,14 +1,13 @@
 # Roadmap
 
-`okf-wiki-kit` today (v0.1.0) covers the full **build** pipeline: a generic engine plus
+`okf-wiki-kit` covers the full **build** pipeline: a generic engine plus
 swappable source adapters that turn any source material into an Open Knowledge Format (OKF)
 / Obsidian vault, with optional LLM enrichment (`okf build | enrich | validate | init`).
 
-The next two phases turn that static vault into something you can *query*. They live behind
-the reserved `okfkit/serve/` extension point, and all new dependencies will be **optional
-extras** — the core stays PyYAML-only.
+Both phases below shipped in **v0.2.0**, behind the `okfkit/serve/` package. All their
+dependencies are **optional extras** — the core stays PyYAML-only.
 
-## Phase 7 — Semantic RAG
+## Phase 7 — Semantic RAG ✓ (shipped v0.2.0)
 
 Add an embeddings index over a built vault plus retrieval, exposed as new CLI commands:
 
@@ -28,18 +27,17 @@ Design direction:
 - **Vault-granular chunking**: OKF vaults are already note-per-section, so most notes embed
   as a single chunk; only oversized notes are split at headings.
 
-## Phase 8 — MCP Server
+## Phase 8 — MCP Server ✓ (shipped v0.2.0)
 
 Expose a vault (and Phase 7 retrieval) over the Model Context Protocol so any MCP client
 (e.g. Claude Code / Claude Desktop) can query the knowledge graph as tools:
 
 - **`okf serve`** — launch a read-only MCP server for a vault.
 
-Planned tool surface (read-only): semantic `search`, `get_note`, `list_notes` (by type/tag,
+Tool surface (read-only): semantic `search`, `get_note`, `list_notes` (by type/tag,
 paginated), `neighbors` (links + backlinks), and `vault_info` (orientation). stdio transport
 first, with room for HTTP later.
 
 ---
 
-*Phases 7 and 8 are under active development. Interfaces here describe intent and may change
-before release. Contributions and feedback welcome — see [CONTRIBUTING.md](../CONTRIBUTING.md).*
+*Phases 7 and 8 shipped in v0.2.0. Contributions and feedback welcome — see [CONTRIBUTING.md](../CONTRIBUTING.md).*
