@@ -1,0 +1,42 @@
+# okf-wiki-kit configuration.
+# Copy to `okf.config.yaml` and edit. Run `okf build` in the same directory.
+
+# ---------------------------------------------------------------------------
+# Source adapter — where your content comes from.
+#   Built-in:  "markdown_folder"  (zero code; point it at a folder of .md files)
+#   Custom:    "path/to/adapter.py:AdapterClass"  (your own SourceAdapter subclass)
+# ---------------------------------------------------------------------------
+adapter: markdown_folder
+adapter_options:
+  path: ./notes            # folder of .md files (markdown_folder adapter)
+  default_type: Note       # OKF `type:` for files with no `type` in frontmatter
+
+# Where to write the generated vault (open this folder in Obsidian).
+output: ./vault
+
+# ---------------------------------------------------------------------------
+# Wikilinks (Obsidian). "wikilink" = [[basename|Display]] ; "markdown" = [Display](path.md)
+# ---------------------------------------------------------------------------
+link_style: wikilink
+
+# ---------------------------------------------------------------------------
+# Mention-based link inference (optional). Scans the bodies of `scan_types`
+# for the titles/aliases of `concept_type` nodes and links them both ways.
+# Leave `concept_type` empty to disable.
+# ---------------------------------------------------------------------------
+link_inference:
+  concept_type: ""         # e.g. "Concept"
+  scan_types: []           # e.g. ["Section"]
+  min_surface_len: 5       # ignore surface strings shorter than this
+  exclude_titles: ["References"]   # skip these node titles when scanning
+
+# ---------------------------------------------------------------------------
+# LLM enrichment (optional; run `okf enrich`). Writes enrichment.json which
+# `okf build` then consumes. Provider auto-detected from env keys if unset.
+# ---------------------------------------------------------------------------
+enrich:
+  provider: null           # "anthropic" | "openai" ; null = auto-detect from env
+  model: null              # default: claude-sonnet-4-6 / qwen/qwen3.7-plus
+  base_url: null           # OpenAI-compatible base URL (default OpenRouter)
+  describe_types: []       # node types to get a one-line `description:` e.g. ["Chapter","Case Study"]
+  canonicalize_type: ""    # node type to merge duplicates/synonyms, e.g. "Concept" ("" = off)

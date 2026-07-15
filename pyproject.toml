@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "okf-wiki-kit"
+version = "0.1.0"
+description = "Build Open-Knowledge-Format (OKF) / Obsidian LLM wikis from any source material."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "okf-wiki-kit contributors" }]
+keywords = ["okf", "obsidian", "knowledge-graph", "llm", "rag", "wiki", "markdown"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# LLM enrichment backends — install only what you use.
+anthropic = ["anthropic>=0.40"]
+openai = ["openai>=1.40"]          # also covers OpenRouter (OpenAI-compatible)
+dev = ["pytest>=7.0"]
+
+[project.scripts]
+okf = "okfkit.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/olivermorgan2/okf-wiki-kit"
+Issues = "https://github.com/olivermorgan2/okf-wiki-kit/issues"
+
+[tool.setuptools.packages.find]
+include = ["okfkit*"]

@@ -1,0 +1,353 @@
+"""The generic build engine: Nodes → an OKF/Obsidian vault.
+
+Domain-agnostic. It renders each `Node` as a typed markdown file with YAML
+frontmatter and `[[wikilink]]` link sections, emits a per-type and a root
+`index.md`, optionally infers mention-based links and applies LLM enrichment,
+then validates that every wikilink resolves.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import shutil
+from collections import OrderedDict, defaultdict
+from dataclasses import dataclass, field
+
+from okfkit import render
+from okfkit.model import Link, Node
+
+RESERVED_FM = {"type", "title", "tags", "aliases"}
+
+
+@dataclass
+class BuildResult:
+    counts: dict = field(default_factory=dict)   # type -> number of nodes
+    total_files: int = 0
+    unresolved: dict = field(default_factory=dict)   # wikilink target -> [source files]
+    inferred_links: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return not self.unresolved
+
+    def summary(self) -> str:
+        lines = ["=== okf build summary ==="]
+        for t in sorted(self.counts):
+            lines.append(f"  {t:16s}: {self.counts[t]}")
+        lines.append(f"  {'TOTAL files':16s}: {self.total_files}")
+        if self.inferred_links:
+            lines.append(f"  inferred links  : {self.inferred_links}")
+        if self.unresolved:
+            lines.append(f"\n!! {len(self.unresolved)} unresolved wikilink target(s):")
+            for t, srcs in list(sorted(self.unresolved.items()))[:25]:
+                extra = f" (+{len(srcs) - 1} more)" if len(srcs) > 1 else ""
+                lines.append(f"   [[{t}]]  <- {srcs[0]}{extra}")
+        else:
+            lines.append("\n  All wikilinks resolve. ✓")
+        return "\n".join(lines)
+
+
+def build(nodes, output, *, link_style="wikilink", link_inference=None,
+          enrichment=None, clean=True) -> BuildResult:
+    """Render *nodes* into an OKF vault at *output*. Returns a BuildResult."""
+    nodes = list(nodes)
+
+    # 1. enrichment (optional): merge canonical nodes, then apply descriptions
+    if enrichment:
+        nodes = _apply_canonicalization(nodes, enrichment.get("canonical"))
+        _apply_descriptions(nodes, enrichment.get("descriptions") or {})
+
+    _check_unique_ids(nodes)
+    basenames = {n.id: _unique_basename(n.id, taken) for n, taken in _basename_stream(nodes)}
+    titles = {n.id: n.title for n in nodes}
+
+    # 2. mention-based link inference (optional)
+    result = BuildResult()
+    if link_inference and link_inference.get("concept_type"):
+        result.inferred_links = _infer_links(nodes, link_inference)
+
+    # 3. layout: one folder per type (slugged); wipe output for a clean, dup-free build
+    folders = {n.type: render.slug(n.type) for n in nodes}
+    if clean and os.path.isdir(output):
+        shutil.rmtree(output)
+    os.makedirs(output, exist_ok=True)
+
+    by_type: dict[str, list[Node]] = defaultdict(list)
+    for n in nodes:
+        by_type[n.type].append(n)
+
+    # 4. render + write every node
+    for n in nodes:
+        front, body = _render_node(n, basenames, titles, link_style)
+        path = os.path.join(output, folders[n.type], basenames[n.id] + ".md")
+        render.write_note(path, front, body)
+
+    # 5. indexes (per-type + root)
+    _write_type_indexes(output, by_type, folders, basenames, titles, link_style)
+    _write_root_index(output, by_type, folders, link_style)
+
+    # 6. counts + validation
+    result.counts = {t: len(v) for t, v in by_type.items()}
+    known = set(basenames.values()) | {"index"} | {f"{f}/index" for f in folders.values()}
+    result.unresolved, result.total_files = _validate(output, known)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Basenames / ids
+# ---------------------------------------------------------------------------
+def _check_unique_ids(nodes) -> None:
+    seen = set()
+    for n in nodes:
+        if n.id in seen:
+            raise ValueError(f"Duplicate node id: {n.id!r}. Adapter must emit unique ids.")
+        seen.add(n.id)
+
+
+_SAFE_BASENAME = re.compile(r"^[A-Za-z0-9 _\-.]+$")
+
+
+def _basename_stream(nodes):
+    """Yield (node, taken_map) so basenames can be assigned with collision handling."""
+    taken: dict[str, str] = {}   # lowercased basename -> node id (case-insensitive FS safe)
+    for n in nodes:
+        yield n, taken
+
+
+def _unique_basename(node_id: str, taken: dict) -> str:
+    # Preserve already-safe ids verbatim so authors' inline [[wikilinks]] keep resolving;
+    # only slug ids that contain characters unsafe for filenames.
+    base = node_id if _SAFE_BASENAME.match(node_id) else render.slug(node_id)
+    cand, i = base, 2
+    while cand.lower() in taken:
+        cand, i = f"{base}-{i}", i + 1
+    taken[cand.lower()] = node_id
+    return cand
+
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+def _render_node(n: Node, basenames: dict, titles: dict, style: str):
+    front: "OrderedDict" = OrderedDict()
+    front["type"] = n.type
+    front["title"] = n.title
+    if n.frontmatter.get("description"):
+        front["description"] = n.frontmatter["description"]
+    for k, v in n.frontmatter.items():
+        if k == "description" or k in RESERVED_FM:
+            continue
+        front[k] = v
+    if n.aliases:
+        front["aliases"] = _dedup(n.aliases)
+    if n.tags:
+        front["tags"] = _dedup(n.tags)
+
+    parts = []
+    if n.body.strip():
+        parts.append(n.body.rstrip())
+
+    groups: "OrderedDict[str, list[Link]]" = OrderedDict()
+    for lk in n.links:
+        sec = lk.section or lk.rel or "Related"
+        bucket = groups.setdefault(sec, [])
+        if lk.target not in [x.target for x in bucket]:
+            bucket.append(lk)
+    for sec, lks in groups.items():
+        lines = [f"## {sec}", ""]
+        for lk in lks:
+            base = basenames.get(lk.target, render.slug(lk.target))
+            disp = lk.display or titles.get(lk.target, base)
+            lines.append(f"- {render.wl(base, disp, style)}")
+        parts.append("\n".join(lines))
+
+    body = "\n\n".join(parts) if parts else ""
+    if not body.lstrip().startswith("# "):
+        body = f"# {n.title}\n\n" + body
+    return front, body
+
+
+def _dedup(seq):
+    seen, out = set(), []
+    for x in seq:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Indexes
+# ---------------------------------------------------------------------------
+def _write_type_indexes(output, by_type, folders, basenames, titles, style):
+    for t, ns in by_type.items():
+        folder = folders[t]
+        lines = [f"# {t} index", "", f"{len(ns)} {t.lower()} node(s).", ""]
+        for n in sorted(ns, key=lambda x: x.title.lower()):
+            lines.append(f"- {render.wl(basenames[n.id], n.title, style)}")
+        render.write_note(
+            os.path.join(output, folder, "index.md"),
+            {"type": "Index", "title": f"{t} Index", "tags": ["index"]},
+            "\n".join(lines),
+        )
+
+
+def _write_root_index(output, by_type, folders, style):
+    lines = ["# Knowledge Wiki", "",
+             "An [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf)"
+             " vault generated by okf-wiki-kit.", "", "## Contents", ""]
+    for t in sorted(by_type):
+        lines.append(f"- {render.wl(folders[t] + '/index', t, style)} ({len(by_type[t])})")
+    total = sum(len(v) for v in by_type.values())
+    lines += ["", "## Stats", "", f"- Nodes: {total}", f"- Types: {len(by_type)}"]
+    render.write_note(
+        os.path.join(output, "index.md"),
+        {"type": "Home", "title": "Knowledge Wiki", "tags": ["moc"]},
+        "\n".join(lines),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Link inference (mention-based)
+# ---------------------------------------------------------------------------
+def _infer_links(nodes, cfg) -> int:
+    concept_type = cfg["concept_type"]
+    scan_types = set(cfg.get("scan_types") or [])
+    min_len = int(cfg.get("min_surface_len", 5))
+    exclude = {s.lower() for s in (cfg.get("exclude_titles") or [])}
+
+    concepts = [n for n in nodes if n.type == concept_type]
+    patterns = []
+    for c in concepts:
+        surfaces = {c.title, *c.aliases}
+        surfaces = sorted({s for s in surfaces if s and len(s) >= min_len}, key=len, reverse=True)
+        if not surfaces:
+            continue
+        pat = re.compile(r"(?<![A-Za-z])(" + "|".join(re.escape(s) for s in surfaces) + r")(?![A-Za-z])", re.I)
+        patterns.append((c, pat))
+
+    concept_section = f"Discussed in {scan_types and next(iter(scan_types)) or 'sections'}s" \
+        if len(scan_types) == 1 else "Discussed in"
+    added = 0
+    for n in nodes:
+        if n.type not in scan_types or n.title.strip().lower() in exclude:
+            continue
+        text = render.strip_code(n.body)
+        for c, pat in patterns:
+            if c.id == n.id:
+                continue
+            if pat.search(text):
+                if not any(l.target == c.id for l in n.links):
+                    n.links.append(Link(c.id, rel="concept", section="Related Concepts"))
+                    added += 1
+                if not any(l.target == n.id for l in c.links):
+                    c.links.append(Link(n.id, rel="mention", section=concept_section))
+    return added
+
+
+# ---------------------------------------------------------------------------
+# Enrichment application
+# ---------------------------------------------------------------------------
+def _apply_descriptions(nodes, descriptions: dict) -> None:
+    for n in nodes:
+        d = descriptions.get(n.id)
+        if d:
+            n.frontmatter["description"] = d
+
+
+def _apply_canonicalization(nodes, canonical) -> list:
+    """Merge member nodes into canonical nodes and redirect all links.
+
+    `canonical` = {"clusters": [{canonical_title, canonical_id?, member_ids, aliases, definition}]}
+    Members not covered by any cluster are left unchanged.
+    """
+    if not canonical or not canonical.get("clusters"):
+        return nodes
+    by_id = {n.id: n for n in nodes}
+    redirect: dict[str, str] = {}
+    merged: dict[str, Node] = {}
+
+    for cl in canonical["clusters"]:
+        members = [by_id[m] for m in cl.get("member_ids", []) if m in by_id]
+        if not members:
+            continue
+        cid = cl.get("canonical_id") or render.slug(cl["canonical_title"])
+        canon = Node(id=cid, type=members[0].type, title=cl["canonical_title"])
+        canon.frontmatter = dict(members[0].frontmatter)
+        if cl.get("definition"):
+            canon.frontmatter["description"] = cl["definition"]
+        aliases, tags, links = set(cl.get("aliases", [])), [], []
+        for m in members:
+            redirect[m.id] = cid
+            aliases.update(m.aliases)
+            aliases.add(m.title)
+            tags += m.tags
+            links += m.links
+        aliases.discard(canon.title)
+        canon.aliases = sorted(a for a in aliases if a)
+        canon.tags = _dedup(tags)
+        canon.links = links
+        merged[cid] = canon
+
+    if not redirect:
+        return nodes
+
+    # rebuild node list: keep non-members, add canonical nodes
+    out = [n for n in nodes if n.id not in redirect]
+    out.extend(merged.values())
+
+    # redirect every link target through the merge map (and drop self-links)
+    for n in out:
+        new_links = []
+        for lk in n.links:
+            tgt = redirect.get(lk.target, lk.target)
+            if tgt == n.id:
+                continue
+            new_links.append(Link(tgt, lk.rel, lk.section, lk.display))
+        n.links = new_links
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+def _validate(output, known):
+    unresolved = defaultdict(list)
+    total = 0
+    for root, _dirs, files in os.walk(output):
+        for fn in files:
+            if not fn.endswith(".md"):
+                continue
+            total += 1
+            path = os.path.join(root, fn)
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            for tgt in render.find_wikilinks(render.strip_code(text)):
+                if tgt not in known:
+                    unresolved[tgt].append(os.path.relpath(path, output))
+    return dict(unresolved), total
+
+
+def validate_vault(output):
+    """Validate an already-built vault on disk. Returns (unresolved, total_files, counts)."""
+    known = {"index"}
+    counts: dict[str, int] = defaultdict(int)
+    for root, _dirs, files in os.walk(output):
+        rel = os.path.relpath(root, output)
+        for fn in files:
+            if not fn.endswith(".md"):
+                continue
+            base = fn[:-3]
+            if base == "index":
+                if rel != ".":
+                    known.add(f"{rel.replace(os.sep, '/')}/index")
+            else:
+                known.add(base)
+                # count node type from its frontmatter
+                m = re.search(r"^type:\s*(.+)$",
+                              open(os.path.join(root, fn), encoding="utf-8").read(), re.M)
+                if m:
+                    counts[m.group(1).strip().strip('"')] += 1
+    unresolved, total = _validate(output, known)
+    return unresolved, total, dict(counts)

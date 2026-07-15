@@ -1,0 +1,32 @@
+# Generated OKF vaults (build output) — regenerate with `okf build`
+/vault/
+/out/
+**/okf-wiki/
+*.vault/
+
+# Enrichment cache (regenerate with `okf enrich`)
+enrichment.json
+
+# Your own source data — keep private, never commit
+/data/
+/private/
+examples/textbook/data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+
+# Editor / OS
+.DS_Store
+.obsidian/
+*.swp
+
+# Internal roadmap (local only — contains local paths)
+docs/phase-7-8-plan.md
