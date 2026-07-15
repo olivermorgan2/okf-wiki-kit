@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "okf-wiki-kit"
-version = "0.2.0"
+version = "0.2.1"
 description = "Build Open-Knowledge-Format (OKF) / Obsidian LLM wikis from any source material."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,7 @@ dependencies = [
 # LLM enrichment backends — install only what you use.
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.40"]          # also covers OpenRouter (OpenAI-compatible) and OpenAI embeddings
+openrouter = ["openai>=1.40"]     # alias of [openai]: OpenRouter is OpenAI-compatible (use --provider openai)
 # Semantic RAG (`okf index` / `okf search` / `okf ask`) — install only what you use.
 rag = ["numpy>=1.24"]
 voyage = ["voyageai>=0.3"]

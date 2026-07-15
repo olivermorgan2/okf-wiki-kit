@@ -39,7 +39,7 @@ Open the `./vault` folder in Obsidian and look at the Graph View.
 ## Optional: LLM enrichment
 
 ```bash
-pip install -e ".[openai]"           # or ".[anthropic]"
+pip install -e ".[openai]"           # or ".[anthropic]"  ([openrouter] is an alias of [openai])
 export OPENROUTER_API_KEY=...        # or ANTHROPIC_API_KEY
 okf enrich                           # writes enrichment.json (canonical concepts + descriptions)
 okf build                            # rebuild, applying the enrichment
