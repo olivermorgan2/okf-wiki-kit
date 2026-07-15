@@ -47,6 +47,7 @@ enrich:
 # Requires the "rag" extra (numpy) plus an embedding provider:
 #   voyage (VOYAGE_API_KEY) | openai (OPENAI_API_KEY) | local (model2vec, no key).
 # The index is written to `.okf/` next to this config (never inside the vault).
+# `mcp`: read-only MCP server (`okf serve`, stdio) — requires the "mcp" extra.
 # ---------------------------------------------------------------------------
 serve:
   rag:
@@ -57,3 +58,6 @@ serve:
     chunk_max_chars: 4000  # split notes longer than this at ##/### headings
     exclude_types: [Index, Home]   # note types to skip when indexing
     top_k: 8               # default number of notes for `okf search` / `okf ask`
+  mcp:
+    name: okf-wiki         # MCP server name shown to clients
+    max_note_chars: 20000  # okf_get_note body window (longer bodies paginate via `offset`)

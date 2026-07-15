@@ -1,4 +1,4 @@
-"""The `okf` command: build | enrich | validate | init | index | search | ask."""
+"""The `okf` command: build | enrich | validate | init | index | search | ask | serve."""
 
 from __future__ import annotations
 
@@ -22,8 +22,9 @@ def main(argv=None):
         "index": "build/refresh the semantic embeddings index over the built vault",
         "search": "semantic search over the indexed vault (offline)",
         "ask": "answer a question from the vault (retrieve + LLM)",
+        "serve": "run a read-only MCP server over the built vault (stdio)",
     }
-    for name in ("build", "enrich", "validate", "index", "search", "ask"):
+    for name in ("build", "enrich", "validate", "index", "search", "ask", "serve"):
         p = sub.add_parser(name, help=helps[name])
         p.add_argument("-c", "--config", default="okf.config.yaml", help="path to okf.config.yaml")
     # enrich-only overrides
@@ -46,13 +47,19 @@ def main(argv=None):
     kp.add_argument("--provider", choices=["anthropic", "openai"], default=None)
     kp.add_argument("--model", default=None)
     kp.add_argument("--base-url", default=None)
+    # serve-only flags
+    sp = sub._name_parser_map["serve"]
+    sp.add_argument("--vault", default=None, metavar="PATH",
+                    help="serve this OKF vault directly (bypasses the config)")
+    sp.add_argument("--no-rag", action="store_true",
+                    help="disable okf_search (graph tools only; no index needed)")
 
     ip = sub.add_parser("init", help="scaffold okf.config.yaml (and an adapter stub)")
     ip.add_argument("--adapter-stub", action="store_true", help="also write adapter.py template")
 
     args = ap.parse_args(argv)
     return {"build": _build, "enrich": _enrich, "validate": _validate, "init": _init,
-            "index": _index, "search": _search, "ask": _ask}[args.cmd](args)
+            "index": _index, "search": _search, "ask": _ask, "serve": _serve}[args.cmd](args)
 
 
 def _load(args):
@@ -202,6 +209,26 @@ def _ask(args):
     for h in hits:
         print(f"  {h.score:6.3f}  [[{h.node_id}]] {h.title}")
     return 0
+
+
+def _serve(args):
+    """Run the read-only MCP server (stdio). stdout belongs to the MCP
+    transport once `run()` starts — all diagnostics go to stderr."""
+    from okfkit.serve import mcp as mcpmod
+    if args.vault:
+        target = os.path.abspath(os.path.expanduser(args.vault))
+        if not os.path.isdir(target):
+            raise SystemExit(f"No vault at {target}.")
+        register = f"claude mcp add okf-wiki -- okf serve --vault {target}"
+    else:
+        from okfkit import config
+        target = config.load(args.config)
+        register = f"claude mcp add okf-wiki -- okf serve -c {os.path.abspath(args.config)}"
+    if args.no_rag:
+        register += " --no-rag"
+    print("okf MCP server starting (stdio). Register it with e.g.:", file=sys.stderr)
+    print(f"  {register}", file=sys.stderr)
+    return mcpmod.run(target, use_rag=not args.no_rag)
 
 
 def _init(args):

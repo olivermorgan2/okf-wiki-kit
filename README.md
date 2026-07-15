@@ -85,6 +85,21 @@ Point `okf.config.yaml` at it: `adapter: path/to/my_adapter.py:MyAdapter`. See
 | `links` | edges to other nodes; each `Link(target, rel, section)` renders under a `## section` heading |
 | `tags`, `aliases` | Obsidian-native tags and aliases |
 
+## Use with Claude Code / Claude Desktop
+
+Serve a built vault as a read-only MCP server so agents can query it as tools:
+
+```bash
+pip install -e ".[mcp]"
+claude mcp add okf-wiki -- okf serve -c /abs/path/okf.config.yaml
+```
+
+The server exposes five read-only tools: `okf_vault_info` (orientation — call first),
+`okf_search` (semantic; needs a prior `okf index`), `okf_list_notes` (browse/paginate by type or
+tag), `okf_get_note` (full note with links and backlinks), and `okf_neighbors` (walk the link
+graph). The graph tools need no API keys. Use `okf serve --vault /abs/path/vault` to serve any
+OKF vault without a config, and `--no-rag` for graph tools only.
+
 ## Roadmap
 
 - **Now:** engine, markdown-folder adapter, custom adapters, link inference, LLM enrichment, CLI.

@@ -31,6 +31,8 @@ openai = ["openai>=1.40"]          # also covers OpenRouter (OpenAI-compatible) 
 rag = ["numpy>=1.24"]
 voyage = ["voyageai>=0.3"]
 local-embeddings = ["numpy>=1.24", "model2vec>=0.3"]
+# MCP server (`okf serve`) — expose the built vault as tools for Claude Code / Desktop.
+mcp = ["mcp>=1.2"]
 dev = ["pytest>=7.0"]
 
 [project.scripts]
