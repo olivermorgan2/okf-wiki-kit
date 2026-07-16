@@ -208,20 +208,9 @@ class VaultService:
 
     def _newer_than(self, created: str | None):
         """True if any note file is newer than the index timestamp (None if unknown)."""
-        if not created:
-            return None
-        try:
-            from datetime import datetime
-            created_ts = datetime.fromisoformat(created).timestamp()
-        except ValueError:
-            return None
-        newest = 0.0
-        for n in self.notes.values():
-            try:
-                newest = max(newest, os.path.getmtime(n.path))
-            except OSError:
-                continue
-        return newest > created_ts
+        from okfkit import freshness
+        return freshness.is_stale(
+            created, freshness.newest_mtime(n.path for n in self.notes.values()))
 
     def _refs(self, ids) -> list[dict]:
         """Resolve link targets to {id, type, title} (unknown targets kept, untyped)."""

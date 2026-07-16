@@ -13,6 +13,7 @@ adapter_options:
 
 # Where to write the generated vault (open this folder in Obsidian).
 output: ./vault
+# clean: true               # wipe the output dir before each build (false = keep stray files)
 
 # ---------------------------------------------------------------------------
 # Wikilinks (Obsidian). "wikilink" = [[basename|Display]] ; "markdown" = [Display](path.md)
@@ -55,7 +56,7 @@ serve:
       provider: null       # "voyage" | "openai" | "local" ; null = auto-detect from env keys
       model: null          # default: voyage-3.5-lite / text-embedding-3-small / minishlab/potion-base-8M
       base_url: null       # OpenAI-compatible embeddings URL (default api.openai.com — NOT OpenRouter)
-    chunk_max_chars: 4000  # split notes longer than this at ##/### headings
+    chunk_max_chars: 4000  # split notes longer than this at ##/### headings (default: 1000 for provider local, else 4000)
     exclude_types: [Index, Home]   # note types to skip when indexing
     top_k: 8               # default number of notes for `okf search` / `okf ask`
   mcp:

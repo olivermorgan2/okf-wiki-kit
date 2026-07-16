@@ -5,13 +5,15 @@ OKF/Obsidian vault directory into lightweight `VaultNote`s (same posture as
 `engine.validate_vault` — it reads the vault output, not the source, so it works
 on any OKF vault regardless of which adapter produced it).
 
-Only stdlib + `okfkit.render` (PyYAML via `split_frontmatter`) — no optional deps.
+Only stdlib + PyYAML + `okfkit.render` — no optional deps.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+
+import yaml
 
 from okfkit import render
 
@@ -50,7 +52,10 @@ def load_vault(path: str, exclude_types: tuple[str, ...] = ()) -> dict[str, Vaul
                 continue
             full = os.path.join(root, fn)
             with open(full, encoding="utf-8") as fh:
-                fm, body = render.split_frontmatter(fh.read())
+                try:
+                    fm, body = render.split_frontmatter(fh.read())
+                except yaml.YAMLError as exc:
+                    raise SystemExit(f"{full}: invalid YAML frontmatter: {exc}")
             ntype = str(fm.get("type") or "")
             if ntype.lower() in excluded:
                 continue

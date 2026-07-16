@@ -102,13 +102,21 @@ def _extract_json(text: str):
 # ---------------------------------------------------------------------------
 # Provider resolution
 # ---------------------------------------------------------------------------
-def make_backend(provider=None, model=None, base_url=None) -> Backend:
+def resolve_provider_model(provider=None, model=None) -> tuple[str, str]:
+    """The (provider, model) `make_backend` would use — no SDK import, no key check."""
     provider = provider or _autodetect_provider()
-    model = model or DEFAULT_MODELS[provider]
+    return provider, model or DEFAULT_MODELS[provider]
+
+
+def make_backend(provider=None, model=None, base_url=None) -> Backend:
+    provider, model = resolve_provider_model(provider, model)
     api_key = None
     if provider == "openai":
         api_key = (os.environ.get("OPENROUTER_API_KEY")
                    or os.environ.get("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            from okfkit import envfile
+            api_key = envfile.prompt_for_key("OPENROUTER_API_KEY") or ""
         if not api_key:
             raise SystemExit("Set OPENROUTER_API_KEY (or OPENAI_API_KEY) for the openai provider.")
         if "..." in api_key or api_key.lower() in ("sk-or-", "your_key"):
@@ -271,6 +279,13 @@ def run(nodes, out_path, *, canonicalize_type="", describe_types=None,
         payload["canonical"]["clusters"] = clusters
         absorbed = sum(len(c["member_ids"]) for c in clusters)
         log(f"    -> {len(clusters)} canonical (absorbed {absorbed})")
+        rewrites = [(m, c["canonical_id"]) for c in clusters
+                    for m in c["member_ids"] if m != c["canonical_id"]]
+        if rewrites:
+            print(f"Note: {len(rewrites)} node id(s) will be rewritten on the next build:",
+                  file=sys.stderr)
+            for old, new in rewrites:
+                print(f"  {old} → {new}", file=sys.stderr)
 
     for t in (describe_types or []):
         subset = [n for n in nodes if n.type == t]

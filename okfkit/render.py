@@ -1,13 +1,16 @@
 """Pure rendering helpers: slugs, YAML frontmatter, wikilinks, file writing.
 
-These are deliberately dependency-free and side-effect-free (except `write_note`),
-so they are easy to test and reuse. Ported from the original one-off generator.
+These are side-effect-free (except `write_note`) and depend only on the stdlib
+plus PyYAML (a core dependency), so they are easy to test and reuse. Ported
+from the original one-off generator.
 """
 
 from __future__ import annotations
 
 import os
 import re
+
+import yaml
 
 _slug_strip = re.compile(r"[^a-z0-9]+")
 _lead_num = re.compile(r"^\s*\d+(\.\d+)*\.?\s+")     # strip "1.2 " / "3. " prefixes
@@ -21,37 +24,27 @@ def slug(text: str) -> str:
     return text or "untitled"
 
 
-def yaml_scalar(v) -> str:
-    """Render a scalar for YAML frontmatter, quoting when needed."""
-    s = str(v)
-    if s == "":
-        return '""'
-    if re.search(r'[:#\[\]{}",&*?|<>=!%@`]', s) or s[0] in "-?:," or s.lower() in (
-        "true", "false", "null", "yes", "no",
-    ):
-        return '"' + s.replace('"', '\\"') + '"'
-    return s
-
-
 def frontmatter(fields: dict) -> str:
     """Render an ordered YAML frontmatter block. List values become YAML sequences.
 
     `None` values and empty lists are omitted. Insertion order is preserved.
+    Emitted via PyYAML so quoting/escaping is always valid YAML.
     """
-    lines = ["---"]
+    plain = {}
     for k, v in fields.items():
         if v is None:
             continue
         if isinstance(v, (list, tuple)):
             if not v:
                 continue
-            lines.append(f"{k}:")
-            for item in v:
-                lines.append(f"  - {yaml_scalar(item)}")
-        else:
-            lines.append(f"{k}: {yaml_scalar(v)}")
-    lines.append("---")
-    return "\n".join(lines) + "\n"
+            v = list(v)
+        plain[k] = v
+    if not plain:
+        return "---\n---\n"
+    dumped = yaml.safe_dump(
+        plain, sort_keys=False, allow_unicode=True, default_flow_style=False
+    )
+    return "---\n" + dumped + "---\n"
 
 
 def wikilink(basename: str, display: str | None = None, style: str = "wikilink") -> str:
@@ -100,8 +93,6 @@ def split_frontmatter(text: str) -> tuple[dict, str]:
     m = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", text, re.S)
     if not m:
         return {}, text
-    import yaml  # lazy: only needed by adapters that read existing frontmatter
-
     data = yaml.safe_load(m.group(1)) or {}
     if not isinstance(data, dict):
         data = {}

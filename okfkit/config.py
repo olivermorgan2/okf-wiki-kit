@@ -15,6 +15,7 @@ class Config:
     link_inference: dict = field(default_factory=dict)
     enrich: dict = field(default_factory=dict)
     serve: dict = field(default_factory=dict)   # `serve:` block (rag / mcp settings)
+    clean: bool = True           # wipe the output dir before each build
     base_dir: str = "."          # directory the config lives in (for resolving relative paths)
 
     def resolve(self, path: str) -> str:
@@ -43,8 +44,19 @@ def load(path: str = "okf.config.yaml") -> Config:
     cfg.link_inference = data.get("link_inference") or {}
     cfg.enrich = data.get("enrich") or {}
     cfg.serve = data.get("serve") or {}
+    cfg.clean = bool(data.get("clean", cfg.clean))
 
     # resolve any path-like adapter option relative to the config file
     if "path" in cfg.adapter_options:
         cfg.adapter_options["path"] = cfg.resolve(cfg.adapter_options["path"])
+
+    # a file-based adapter spec ("path/to/adapter.py[:Class]") must resolve
+    # against the config's directory, not the CWD — otherwise the same config
+    # loads a different adapter depending on where okf is run from. Module
+    # specs ("markdown_folder", "pkg.mod:Class") pass through untouched.
+    target, sep, cls = cfg.adapter.rpartition(":")
+    if not sep:
+        target, cls = cls, ""
+    if target.endswith(".py"):
+        cfg.adapter = cfg.resolve(target) + sep + cls
     return cfg

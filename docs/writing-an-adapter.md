@@ -20,7 +20,7 @@ class MyAdapter(SourceAdapter):
 
 | field | required | notes |
 |-------|----------|-------|
-| `id` | ✅ | Stable, unique. Becomes the filename and wikilink target. Safe ids (`[A-Za-z0-9 _-.]`) are preserved verbatim; others are slugged. |
+| `id` | ✅ | Stable, unique. Becomes the filename and wikilink target. Safe ids (`[A-Za-z0-9 _-.]`) are preserved verbatim; others are slugged. Third outcome: with `enrich.canonicalize_type`, nodes of that type are merged under a canonical name and their ids/filenames may be rewritten (e.g. `concept-progressive-trust` → `progressive-trust`). |
 | `type` | ✅ | OKF `type:` — any string. Nodes are grouped into a folder per type. |
 | `title` | ✅ | Display name (used as wikilink text). |
 | `body` | | Markdown body. If it doesn't start with an H1, the engine adds `# {title}`. |
@@ -74,6 +74,9 @@ adapter_options: { chapters_dir: /path/to/chapters }
 link_inference: { concept_type: Concept, scan_types: [Section], exclude_titles: [References] }
 enrich: { canonicalize_type: Concept, describe_types: [Chapter, "Case Study"] }
 ```
+
+Note: `canonicalize_type: Concept` rewrites Concept ids — merged nodes take the canonical slug,
+so the id your adapter emits may not be the filename on disk (`okf enrich` prints the rewrite map).
 
 ## Tips
 

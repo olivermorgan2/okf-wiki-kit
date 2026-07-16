@@ -52,6 +52,35 @@ def test_unresolved_link_is_reported(tmp_path):
     assert "ghost" in res.unresolved
 
 
+def test_build_refuses_to_wipe_a_non_vault_directory(tmp_path):
+    out = tmp_path / "docs"
+    out.mkdir()
+    (out / "thesis.docx").write_text("precious")
+    with pytest.raises(SystemExit):
+        engine.build(_nodes(), str(out))
+    assert (out / "thesis.docx").read_text() == "precious"
+
+
+def test_build_into_empty_dir_and_rebuild_over_marked_vault(tmp_path):
+    out = tmp_path / "vault"
+    out.mkdir()                                  # empty existing dir is fine
+    assert engine.build(_nodes(), str(out)).ok
+    assert (out / engine.MARKER).exists()
+    assert engine.build(_nodes(), str(out)).ok   # marker present -> rebuild allowed
+
+
+def test_source_note_named_index_survives_build(tmp_path, capsys):
+    nodes = _nodes() + [Node(id="index", type="Topic", title="The Index",
+                             body="Card catalogues.")]
+    res = engine.build(nodes, str(tmp_path / "v"))
+    assert res.ok
+    note = (tmp_path / "v" / "topic" / "index-2.md").read_text()
+    assert "Card catalogues." in note            # source note survives, renamed
+    type_index = (tmp_path / "v" / "topic" / "index.md").read_text()
+    assert "# Topic index" in type_index         # generated index kept its slot
+    assert "renamed to 'index-2'" in capsys.readouterr().err
+
+
 def test_canonicalization_merges_and_redirects(tmp_path):
     nodes = [
         Node(id="c-he", type="Concept", title="health equity"),

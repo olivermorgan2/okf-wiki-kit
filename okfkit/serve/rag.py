@@ -103,8 +103,10 @@ def _strip_link_sections(body: str) -> str:
 def _split_at_headings(body: str, max_chars: int) -> list[str]:
     """Greedily pack ##/### sections into pieces of at most *max_chars*. A section
     that is itself oversized (e.g. a long headingless references list) falls back
-    to splitting at blank-line paragraph boundaries, so no chunk blows past
-    embedding-model input limits. Only a single oversized paragraph stays whole."""
+    to splitting at blank-line paragraph boundaries; only a single oversized
+    paragraph stays whole. Note: `chunk_notes` prepends the context prefix AFTER
+    this split (only the whole-note path budgets for the prefix), so an emitted
+    chunk's embedded text can be up to ``max_chars + len(prefix) + 2`` chars."""
     pieces = _greedy_pack(_chunk_split_re.split(body), max_chars)
     out = []
     for piece in pieces:

@@ -36,6 +36,11 @@ okf validate                         # every node typed, every wikilink resolves
 
 Open the `./vault` folder in Obsidian and look at the Graph View.
 
+Nested folders work, with one wrinkle: repeated filenames are disambiguated — the first
+`notes.md` keeps the id `notes`, a second one in another folder gets a parent-dir-prefixed id
+like `projects-notes` (a warning names both files). A source note named `index.md` is renamed
+(`index-2`) so it doesn't collide with the generated type index.
+
 ## Optional: LLM enrichment
 
 ```bash
@@ -45,8 +50,25 @@ okf enrich                           # writes enrichment.json (canonical concept
 okf build                            # rebuild, applying the enrichment
 ```
 
+Order matters: the pipeline is **`enrich → build → index → serve`**. `enrich` writes
+`enrichment.json`, which `build` consumes; `index` embeds the built vault. Running steps out of
+order silently produces stale output (the CLI warns when it detects this).
+
 Enrichment is **provider-flexible**: Anthropic (`claude-sonnet-4-6`) or any OpenAI-compatible
 endpoint such as **OpenRouter** (`qwen/qwen3.7-plus`). Provider is auto-detected from your env keys.
+
+## Optional: semantic search
+
+```bash
+pip install -e ".[rag,local-embeddings]"
+okf index                            # embeds the built vault into .okf/
+okf search "how does delegation build trust?"
+```
+
+The default embedding provider is `local` (`potion-base-8M`): no API key and nothing downloaded
+at install (the model fetches on first use), but it is a static model — expect soft ranking on
+topically homogeneous vaults. If retrieval feels vague, set `serve.rag.embedding.provider: voyage`
+(or `openai`) in `okf.config.yaml`.
 
 ## Writing your own adapter
 
@@ -77,7 +99,7 @@ Point `okf.config.yaml` at it: `adapter: path/to/my_adapter.py:MyAdapter`. See
 
 | field | meaning |
 |-------|---------|
-| `id` | stable unique id → becomes the filename / wikilink target |
+| `id` | stable unique id → becomes the filename / wikilink target. Exception: when `enrich.canonicalize_type` is set, nodes of that type are merged under a canonical name and their ids/filenames may be rewritten (e.g. `concept-progressive-trust` → `progressive-trust`) |
 | `type` | OKF `type:` value (required) — `"Chapter"`, `"Concept"`, or anything you invent |
 | `title` | human-readable name (wikilink display) |
 | `body` | markdown body (no frontmatter) |
@@ -91,8 +113,16 @@ Serve a built vault as a read-only MCP server so agents can query it as tools:
 
 ```bash
 pip install -e ".[mcp]"
-claude mcp add okf-wiki -- okf serve -c /abs/path/okf.config.yaml
+claude mcp add okf-wiki -- /path/to/venv/bin/python -m okfkit.cli serve -c /abs/path/okf.config.yaml
 ```
+
+MCP clients spawn servers without your shell's PATH, so point at your venv's `python` directly —
+running `okf serve` prints the exact command for your install.
+
+The same applies to environment: the client spawns `okf serve` with no shell, no venv activation,
+and no inherited environment, so keys exported in `.zshrc` never reach the server. Put keys in a
+`.env` next to your config (the kit loads it automatically), and run `okf doctor` to check what
+the server will actually see.
 
 The server exposes five read-only tools: `okf_vault_info` (orientation — call first),
 `okf_search` (semantic; needs a prior `okf index`), `okf_list_notes` (browse/paginate by type or

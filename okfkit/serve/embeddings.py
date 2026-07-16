@@ -84,16 +84,27 @@ class EmbeddingBackend:
 # ---------------------------------------------------------------------------
 # Provider resolution
 # ---------------------------------------------------------------------------
-def make_embedder(provider=None, model=None, base_url=None) -> EmbeddingBackend:
+def resolve_provider_model(provider=None, model=None) -> tuple[str, str]:
+    """The (provider, model) `make_embedder` would use — no SDK import, no key check."""
     provider = provider or _autodetect_provider()
-    model = model or DEFAULT_EMBED_MODELS[provider]
+    return provider, model or DEFAULT_EMBED_MODELS[provider]
+
+
+def make_embedder(provider=None, model=None, base_url=None) -> EmbeddingBackend:
+    provider, model = resolve_provider_model(provider, model)
     api_key = None
     if provider == "voyage":
         api_key = (os.environ.get("VOYAGE_API_KEY") or "").strip()
         if not api_key:
+            from okfkit import envfile
+            api_key = envfile.prompt_for_key("VOYAGE_API_KEY") or ""
+        if not api_key:
             raise SystemExit("Set VOYAGE_API_KEY for the voyage embedding provider.")
     elif provider == "openai":
         api_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+        if not api_key:
+            from okfkit import envfile
+            api_key = envfile.prompt_for_key("OPENAI_API_KEY") or ""
         if not api_key:
             raise SystemExit("Set OPENAI_API_KEY for the openai embedding provider "
                              "(note: OpenRouter has no embeddings endpoint).")
