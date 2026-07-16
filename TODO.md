@@ -38,8 +38,6 @@ add new ones under the right heading. Keep entries specific enough to act on.
   so regressions are caught before tagging.
 
 ## Docs / packaging
-- [ ] **CHANGELOG.md.** Start a changelog (v0.1.0 → 0.2.0 RAG+MCP → 0.2.1 `[openrouter]`
-  → the field-report fixes below).
 - [ ] **Document the release process.** Note the tag → GitHub Release → Trusted-Publishing
   flow in CONTRIBUTING.
 
@@ -55,6 +53,7 @@ add new ones under the right heading. Keep entries specific enough to act on.
   only the list is copied. Harmless via the CLI; a surprise for library callers.
 
 ## Done
+- [x] **CHANGELOG.md** — started with v0.1.0 → v0.3.0. _(2026-07-16)_
 - [x] **Field report v0.2.1 fixes — data-loss and crash bugs** _(2026-07-16)_:
   `okf build` refuses to wipe non-vault directories (`.okf-vault` marker guard in
   `engine.py` + explicit config-dir/source-dir checks in `cli._build`, `clean:` config
