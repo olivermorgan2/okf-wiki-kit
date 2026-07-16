@@ -11,6 +11,7 @@ skipped without it. No network, no models, no subprocesses.
 import hashlib
 import json
 import re
+import types
 
 import pytest
 
@@ -218,6 +219,67 @@ def test_search_disabled_with_no_rag(tmp_path):
         svc.search("anything")
 
 
+def _hosted_index(tmp_path, vault, provider, model):
+    """Persist a FakeEmbedder index whose header claims a hosted provider, so the
+    lazy `Index.load(base_dir)` calls the real `make_embedder(provider, model)`."""
+    from okfkit.serve import chunk_notes, load_vault
+    from okfkit.serve.rag import Index
+
+    idx = Index(FakeEmbedder(provider=provider, model=model), vault_path=vault)
+    idx.build(chunk_notes(load_vault(vault, exclude_types=EXCLUDE)),
+              log=lambda *a: None)
+    idx.save(str(tmp_path))
+
+
+@pytest.mark.parametrize("provider,model,var", [
+    ("voyage", "voyage-3.5-lite", "VOYAGE_API_KEY"),
+    ("openai", "text-embedding-3-small", "OPENAI_API_KEY"),
+])
+def test_search_missing_hosted_key_names_the_env_var(tmp_path, monkeypatch,
+                                                     provider, model, var):
+    """Field report §3: an MCP-spawned server inherits no shell env, so a
+    hosted-provider index with the key unset must say WHICH variable is missing
+    and why — not the generic 'Could not load the semantic index: ...'."""
+    pytest.importorskip("numpy")
+    monkeypatch.setenv("OKF_NONINTERACTIVE", "1")   # the key prompt must not fire
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    svc = _service(tmp_path, use_rag=True)
+    _hosted_index(tmp_path, svc.vault_path, provider, model)
+
+    with pytest.raises(SearchUnavailable) as ei:
+        svc.search("anything")
+    msg = str(ei.value)
+    assert f"'{provider}' embedding provider needs {var}" in msg
+    assert "MCP servers do not inherit your shell env" in msg
+    assert ".env" in msg and "okf doctor" in msg
+    assert "Could not load the semantic index" not in msg
+    # graph tools keep working key-less
+    assert svc.get_note("a")["id"] == "a"
+    assert svc.neighbors("a")["id"] == "a"
+    assert svc.vault_info()["total"] == 5
+
+
+def test_search_other_load_failure_keeps_generic_message(tmp_path, monkeypatch):
+    """A SystemExit that is NOT a missing hosted key (missing numpy/SDK, ...)
+    keeps the generic wrapper with the original detail."""
+    pytest.importorskip("numpy")
+    from okfkit.serve import embeddings
+
+    svc = _service(tmp_path, use_rag=True)
+    _hosted_index(tmp_path, svc.vault_path, "local", "minishlab/potion-base-8M")
+
+    def boom(provider=None, model=None, base_url=None):
+        raise SystemExit("Missing package(s) for the 'local' embedding provider: "
+                         "pip install model2vec numpy")
+
+    monkeypatch.setattr(embeddings, "make_embedder", boom)
+    with pytest.raises(SearchUnavailable,
+                       match=r"^Could not load the semantic index: "
+                             r"Missing package\(s\)"):
+        svc.search("anything")
+
+
 def test_search_with_index_returns_ranked_hits(tmp_path, monkeypatch):
     pytest.importorskip("numpy")
     svc = _service(tmp_path, use_rag=True)
@@ -264,6 +326,52 @@ def test_get_note_truncates_oversized_body(tmp_path):
             break
         page = svc.get_note("big", offset=page["next_offset"])
     assert "".join(parts) == full
+
+
+# ---------------------------------------------------------------------------
+# run(): transport threading at the FastMCP boundary (no server ever starts)
+# ---------------------------------------------------------------------------
+class _FakeFastMCP:
+    """Stands in for FastMCP: records .run() calls; .settings mirrors the SDK's
+    mutable Settings(host=..., port=...) defaults."""
+
+    def __init__(self):
+        self.settings = types.SimpleNamespace(host="127.0.0.1", port=8000)
+        self.run_calls = []
+
+    def run(self, *args, **kwargs):
+        self.run_calls.append((args, kwargs))
+
+
+def _fake_server(monkeypatch):
+    from okfkit.serve import mcp as mcpmod
+    fake = _FakeFastMCP()
+    monkeypatch.setattr(mcpmod, "create_server",
+                        lambda target, use_rag=True: fake)
+    return mcpmod, fake
+
+
+def test_run_defaults_to_bare_stdio_run(monkeypatch):
+    mcpmod, fake = _fake_server(monkeypatch)
+    assert mcpmod.run("ignored-vault") == 0
+    assert fake.run_calls == [((), {})]            # byte-identical stdio call
+    assert (fake.settings.host, fake.settings.port) == ("127.0.0.1", 8000)
+
+
+def test_run_http_sets_host_port_and_streamable_http(monkeypatch):
+    mcpmod, fake = _fake_server(monkeypatch)
+    assert mcpmod.run("ignored-vault", transport="http",
+                      host="0.0.0.0", port=9321) == 0
+    assert fake.run_calls == [((), {"transport": "streamable-http"})]
+    assert (fake.settings.host, fake.settings.port) == ("0.0.0.0", 9321)
+
+
+def test_run_stdio_ignores_host_port(monkeypatch):
+    mcpmod, fake = _fake_server(monkeypatch)
+    assert mcpmod.run("ignored-vault", transport="stdio",
+                      host="0.0.0.0", port=9321) == 0
+    assert fake.run_calls == [((), {})]
+    assert (fake.settings.host, fake.settings.port) == ("127.0.0.1", 8000)
 
 
 # ---------------------------------------------------------------------------

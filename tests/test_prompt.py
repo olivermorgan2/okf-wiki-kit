@@ -69,7 +69,7 @@ def test_make_backend_prompt_rescue_passes_key_check(no_keys):
 # resolvers: pure — sane defaults per provider, no keys, no SDKs
 # ---------------------------------------------------------------------------
 def test_enrich_resolver_defaults(no_keys):
-    assert enrich.resolve_provider_model() == ("anthropic", "claude-sonnet-4-6")
+    assert enrich.resolve_provider_model() == ("anthropic", "claude-opus-4-8")
     assert enrich.resolve_provider_model("openai") == \
         ("openai", enrich.DEFAULT_MODELS["openai"])
     assert enrich.resolve_provider_model("openai", "custom/model") == \

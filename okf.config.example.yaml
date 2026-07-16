@@ -37,7 +37,7 @@ link_inference:
 # ---------------------------------------------------------------------------
 enrich:
   provider: null           # "anthropic" | "openai" ; null = auto-detect from env
-  model: null              # default: claude-sonnet-4-6 / qwen/qwen3.7-plus
+  model: null              # default: claude-opus-4-8 / qwen/qwen3.7-plus
   base_url: null           # OpenAI-compatible base URL (default OpenRouter)
   describe_types: []       # node types to get a one-line `description:` e.g. ["Chapter","Case Study"]
   canonicalize_type: ""    # node type to merge duplicates/synonyms, e.g. "Concept" ("" = off)

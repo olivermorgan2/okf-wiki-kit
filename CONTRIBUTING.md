@@ -35,6 +35,18 @@ pytest
 `okfkit/enrich.py` uses a small `Backend` abstraction. To support another provider, add a branch
 that returns the model's text for a `(system, user)` prompt; keep the JSON parsing/retry shared.
 
+## Releasing
+
+Releases publish to PyPI via `.github/workflows/release.yml` (Trusted Publishing / OIDC — no API token). The flow, for `vX.Y.Z`:
+
+1. Bump the version in **both** `pyproject.toml` and `okfkit/__init__.py`. The workflow verifies the built wheel's version against the tag and fails the publish if they disagree.
+2. Add a `CHANGELOG.md` entry.
+3. Commit and push `main`.
+4. Tag and push: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+5. Create the GitHub Release: `gh release create vX.Y.Z --title "vX.Y.Z" --notes "..."`. *Publishing the release* is what triggers the workflow — the tag alone does nothing.
+
+The workflow then runs the full test matrix; only if it's green does the `publish` job build and upload to PyPI. Note: the publish job uses the `pypi` GitHub environment, which requires a reviewer to **approve the deployment** in the Actions UI before the upload runs — the release will sit at "Waiting" until someone approves it.
+
 ## Reporting issues
 
 Please include your `okf.config.yaml`, the adapter you used, and the command output.

@@ -54,7 +54,7 @@ Order matters: the pipeline is **`enrich → build → index → serve`**. `enri
 `enrichment.json`, which `build` consumes; `index` embeds the built vault. Running steps out of
 order silently produces stale output (the CLI warns when it detects this).
 
-Enrichment is **provider-flexible**: Anthropic (`claude-sonnet-4-6`) or any OpenAI-compatible
+Enrichment is **provider-flexible**: Anthropic (`claude-opus-4-8`) or any OpenAI-compatible
 endpoint such as **OpenRouter** (`qwen/qwen3.7-plus`). Provider is auto-detected from your env keys.
 
 ## Optional: semantic search

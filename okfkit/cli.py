@@ -25,7 +25,7 @@ def main(argv=None):
         "index": "build/refresh the semantic embeddings index over the built vault",
         "search": "semantic search over the indexed vault (offline)",
         "ask": "answer a question from the vault (retrieve + LLM)",
-        "serve": "run a read-only MCP server over the built vault (stdio)",
+        "serve": "run a read-only MCP server over the built vault (stdio, or --transport http)",
         "doctor": "check environment, config, keys, vault, and index health",
     }
     for name in ("build", "enrich", "validate", "index", "search", "ask", "serve", "doctor"):
@@ -60,6 +60,13 @@ def main(argv=None):
     sp.add_argument("--register", action="store_true",
                     help="register this server with Claude Code via `claude mcp add`, "
                          "print the command, and exit")
+    sp.add_argument("--transport", choices=["stdio", "http"], default="stdio",
+                    help="MCP transport: stdio (default; what MCP clients spawn) "
+                         "or http (FastMCP streamable-http on --host/--port)")
+    sp.add_argument("--host", default="127.0.0.1", metavar="HOST",
+                    help="bind address for --transport http (default: 127.0.0.1)")
+    sp.add_argument("--port", type=int, default=8000, metavar="PORT",
+                    help="port for --transport http (default: 8000)")
 
     ip = sub.add_parser("init", help="scaffold okf.config.yaml (and an adapter stub)")
     ip.add_argument("--adapter-stub", action="store_true", help="also write adapter.py template")
@@ -317,9 +324,14 @@ def _register(args):
 
 
 def _serve(args):
-    """Run the read-only MCP server (stdio). stdout belongs to the MCP
-    transport once `run()` starts — all diagnostics go to stderr."""
+    """Run the read-only MCP server (stdio by default, or streamable HTTP with
+    --transport http). Under stdio, stdout belongs to the MCP transport once
+    `run()` starts — all diagnostics go to stderr (kept for http too, for
+    consistency)."""
     if args.register:
+        if args.transport == "http":
+            print("Note: --register always registers the stdio form (Claude Code "
+                  "spawns MCP servers over stdio); ignoring --transport http.")
         return _register(args)
     # never prompt for keys, and keep model-download progress off stdout
     os.environ["OKF_NONINTERACTIVE"] = "1"
@@ -336,9 +348,14 @@ def _serve(args):
         register = _register_hint("-c", os.path.abspath(args.config))
     if args.no_rag:
         register += " --no-rag"
-    print("okf MCP server starting (stdio). Register it with e.g.:", file=sys.stderr)
-    print(f"  {register}", file=sys.stderr)
-    return mcpmod.run(target, use_rag=not args.no_rag)
+    if args.transport == "http":
+        print(f"okf MCP server starting (streamable HTTP) at "
+              f"http://{args.host}:{args.port}/mcp", file=sys.stderr)
+    else:
+        print("okf MCP server starting (stdio). Register it with e.g.:", file=sys.stderr)
+        print(f"  {register}", file=sys.stderr)
+    return mcpmod.run(target, use_rag=not args.no_rag,
+                      transport=args.transport, host=args.host, port=args.port)
 
 
 def _doctor(args):

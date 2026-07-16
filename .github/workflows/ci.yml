@@ -1,0 +1,35 @@
+name: CI
+
+# Runs the test suite on every push to main and on every PR targeting main.
+# The test job mirrors the `test` job in release.yml — keep the matrix and
+# install line in sync with release.yml (release.yml is the release gate;
+# 3.13 here is CI-only extra coverage and is intentionally NOT in release.yml).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install with test dependencies
+        # dev = pytest; rag = numpy (Phase 7 tests); mcp = MCP SDK (Phase 8 tests).
+        # voyage/openai/local-embeddings are intentionally omitted — tests use fakes.
+        run: pip install -e ".[dev,rag,mcp]"
+      - name: Run tests
+        run: python -m pytest -q

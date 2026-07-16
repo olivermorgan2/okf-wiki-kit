@@ -28,6 +28,11 @@ from okfkit.serve import vault as vaultmod
 DEFAULT_SERVER_NAME = "okf-wiki"
 DEFAULT_MAX_NOTE_CHARS = 20000
 
+# Env vars `embeddings.make_embedder` raises SystemExit("Set {VAR} ...") about.
+# MCP clients spawn servers with no shell env, so a hosted-provider index is
+# routinely keyless here — detect it and explain THAT, not "index broken".
+_EMBED_KEY_VARS = {"VOYAGE_API_KEY": "voyage", "OPENAI_API_KEY": "openai"}
+
 _INSTRUCTIONS = (
     "Read-only access to an OKF/Obsidian knowledge wiki. Start with "
     "okf_vault_info to see note types, tags and whether semantic search is "
@@ -181,7 +186,7 @@ class VaultService:
                     "'okf-wiki-kit[rag,local-embeddings]'), then retry. "
                     "okf_list_notes / okf_get_note work without an index.")
             except SystemExit as exc:   # missing numpy/SDK/API key from rag/embeddings
-                raise SearchUnavailable(f"Could not load the semantic index: {exc}")
+                raise SearchUnavailable(_load_failure_message(str(exc)))
         return self._index
 
     def _index_info(self) -> dict:
@@ -309,14 +314,24 @@ def create_server(cfg_or_vault_path, use_rag: bool = True):
     return server
 
 
-def run(cfg_or_vault_path, use_rag: bool = True) -> int:
-    """Create the server and block serving stdio (for `okf serve`).
+def run(cfg_or_vault_path, use_rag: bool = True, transport: str = "stdio",
+        host: str = "127.0.0.1", port: int = 8000) -> int:
+    """Create the server and block serving it (for `okf serve`).
 
-    stdout belongs to the MCP transport — any CLI diagnostics must go to stderr
-    before calling this.
+    *transport* is "stdio" (default) or "http" (FastMCP's streamable-http,
+    bound to *host*:*port*; ignored for stdio). Under stdio, stdout belongs to
+    the MCP transport — any CLI diagnostics must go to stderr before calling
+    this.
     """
     server = create_server(cfg_or_vault_path, use_rag=use_rag)
-    server.run()   # stdio transport
+    if transport == "http":
+        # FastMCP reads host/port from its Settings (constructor kwargs);
+        # patching them here keeps create_server() transport-agnostic.
+        server.settings.host = host
+        server.settings.port = port
+        server.run(transport="streamable-http")
+    else:
+        server.run()   # stdio transport
     return 0
 
 
@@ -328,6 +343,25 @@ def _resolve(cfg_or_vault_path) -> tuple[str, str, dict]:
     cfg = cfg_or_vault_path
     settings = (getattr(cfg, "serve", None) or {}).get("mcp") or {}
     return cfg.resolve(cfg.output), cfg.base_dir, settings
+
+
+def _load_failure_message(detail: str) -> str:
+    """Actionable SearchUnavailable text for an index-load SystemExit.
+
+    A hosted-provider index with the API key unset is the normal failure for an
+    MCP-spawned server (clients pass no shell env), so name the variable and
+    the fix; anything else keeps the generic wrapper around *detail*.
+    """
+    for var, provider in _EMBED_KEY_VARS.items():
+        if var in detail:
+            return (
+                f"okf_search is unavailable: the {provider!r} embedding provider "
+                f"needs {var}, which is not set in this server's environment. "
+                "MCP servers do not inherit your shell env — put the key in a "
+                ".env file next to okf.config.yaml and reconnect, or run "
+                "`okf doctor` to check. okf_list_notes / okf_get_note / "
+                "okf_neighbors keep working without it.")
+    return f"Could not load the semantic index: {detail}"
 
 
 def _snippet(text: str, limit: int = 240) -> str:

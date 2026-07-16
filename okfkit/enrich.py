@@ -1,6 +1,6 @@
 """Optional LLM enrichment: canonicalize a node type + write one-line descriptions.
 
-Provider-flexible: Anthropic (`claude-sonnet-4-6`) or any OpenAI-compatible
+Provider-flexible: Anthropic (`claude-opus-4-8`) or any OpenAI-compatible
 endpoint such as OpenRouter (`qwen/qwen3.7-plus`). Writes `enrichment.json`,
 which `engine.build()` consumes on the next build.
 
@@ -22,7 +22,7 @@ import sys
 
 from okfkit import render
 
-DEFAULT_MODELS = {"anthropic": "claude-sonnet-4-6", "openai": "qwen/qwen3.7-plus"}
+DEFAULT_MODELS = {"anthropic": "claude-opus-4-8", "openai": "qwen/qwen3.7-plus"}
 DEFAULT_OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
 
 
@@ -44,15 +44,18 @@ class Backend:
 
     def json(self, system, user, max_tokens=16000):
         turns = [("user", user)]
+        last_err = None
         for _ in range(2):
             text = self._complete(system, turns, max_tokens)
-            parsed = _extract_json(text)
-            if parsed is not None:
-                return parsed
-            turns = [("user", user), ("assistant", text),
-                     ("user", "That was not valid JSON. Reply with ONLY the JSON value, "
-                              "no prose, no code fences.")]
-        raise ValueError("Could not parse JSON from model after 2 attempts.")
+            try:
+                return extract_json(text)
+            except ValueError as e:
+                last_err = e
+                turns = [("user", user), ("assistant", text),
+                         ("user", f"The previous response was not valid JSON (error: {e}). "
+                                  "Return ONLY the corrected JSON, no prose, no code fences, "
+                                  "no commentary.")]
+        raise ValueError(f"Could not parse JSON from model after 2 attempts: {last_err}")
 
     def text(self, system, user, max_tokens=2000):
         """Plain-text completion (no JSON coercion) — used by `okf ask` (serve.rag)."""
@@ -81,22 +84,35 @@ class Backend:
         return resp.choices[0].message.content or ""
 
 
-def _extract_json(text: str):
-    text = (text or "").strip()
-    m = re.search(r"```(?:json)?\s*(.*?)```", text, re.S)
-    if m:
-        text = m.group(1).strip()
-    for opener, closer in (("{", "}"), ("[", "]")):
-        i, j = text.find(opener), text.rfind(closer)
-        if 0 <= i < j:
+def extract_json(text: str):
+    """Pull the JSON payload out of a model response, defensively.
+
+    Tolerates markdown code fences (with or without a language tag), leading/
+    trailing prose around the JSON, and trailing commas before `}` / `]`.
+    Raises ValueError (with a snippet of the offending text) when nothing parses.
+    """
+    raw = (text or "").strip()
+    candidates = []
+    m = re.search(r"```[a-zA-Z0-9_-]*\s*\n?(.*?)```", raw, re.S)
+    if m and m.group(1).strip():
+        candidates.append(m.group(1).strip())
+    candidates.append(raw)
+    # outermost {...} / [...] spans (earliest opener first), for prose-wrapped JSON
+    for cand in list(candidates):
+        spans = []
+        for opener, closer in (("{", "}"), ("[", "]")):
+            i, j = cand.find(opener), cand.rfind(closer)
+            if 0 <= i < j:
+                spans.append((i, cand[i:j + 1]))
+        candidates += [s for _, s in sorted(spans)]
+    for cand in candidates:
+        for attempt in (cand, re.sub(r",\s*([}\]])", r"\1", cand)):
             try:
-                return json.loads(text[i:j + 1])
+                return json.loads(attempt)
             except json.JSONDecodeError:
-                pass
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+                continue
+    snippet = raw[:200] + ("..." if len(raw) > 200 else "")
+    raise ValueError(f"no parseable JSON in model output (starts: {snippet!r})")
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +155,11 @@ def _autodetect_provider() -> str:
 # ---------------------------------------------------------------------------
 # Canonicalization (batched, with a no-loss fallback)
 # ---------------------------------------------------------------------------
+# Batch size for canonicalization. 100-concept batches proved too large for some
+# models to answer with valid JSON; ~30 is reliably parseable. Override per call
+# via canonicalize(batch_size=...) / run(canonicalize_batch_size=...).
+CANON_BATCH_SIZE = 30
+
 _CANON_SYSTEM = (
     "You are a knowledge engineer curating a concept index for a wiki. You merge "
     "duplicate/near-duplicate node titles into canonical concepts and write crisp definitions."
@@ -151,7 +172,7 @@ synonyms, or near-duplicates that should be merged (e.g. "health security" and "
 security"). Produce canonical concepts. Merge where titles denote the same concept; do NOT merge
 genuinely distinct concepts.
 
-Return ONLY a JSON object of this exact shape (no prose, no code fences):
+Return ONLY a JSON object of this exact shape — no prose, no markdown code fences, no commentary:
 {{
   "concept_clusters": [
     {{
@@ -187,17 +208,23 @@ Input nodes:
     return out
 
 
-def canonicalize(backend, nodes, batch_size=100, log=print):
+def canonicalize(backend, nodes, batch_size=None, log=print):
+    batch_size = batch_size or CANON_BATCH_SIZE
     items = sorted(({"id": n.id, "title": n.title} for n in nodes),
                    key=lambda x: x["title"].lower())
     valid_ids = {n.id for n in nodes}
     raw = []
     for start in range(0, len(items), batch_size):
         chunk = items[start:start + batch_size]
+        batch_no = start // batch_size + 1
         try:
             raw += _canon_batch(backend, chunk)
         except ValueError as e:   # parse failure only — auth/API errors propagate
-            log(f"    !! batch {start}-{start + len(chunk)} unparseable ({e}); keeping unmerged")
+            print(f"Warning: canonicalization batch {batch_no} "
+                  f"(concepts {start}-{start + len(chunk)}) returned unparseable JSON "
+                  f"even after a repair retry: {e}\n"
+                  f"  Keeping these {len(chunk)} concepts unmerged (non-fatal).",
+                  file=sys.stderr)
             raw += [{"canonical_title": c["title"], "aliases": [],
                      "member_ids": [c["id"]], "definition": ""} for c in chunk]
         log(f"    canonicalized {min(start + batch_size, len(items))}/{len(items)}")
@@ -260,7 +287,7 @@ def _snippet(body: str, n: int = 400) -> str:
 # Orchestration
 # ---------------------------------------------------------------------------
 def run(nodes, out_path, *, canonicalize_type="", describe_types=None,
-        provider=None, model=None, base_url=None, log=print):
+        canonicalize_batch_size=None, provider=None, model=None, base_url=None, log=print):
     nodes = list(nodes)
     if not canonicalize_type and not (describe_types or []):
         raise SystemExit(
@@ -275,7 +302,7 @@ def run(nodes, out_path, *, canonicalize_type="", describe_types=None,
     if canonicalize_type:
         subset = [n for n in nodes if n.type == canonicalize_type]
         log(f"[canonicalize] {len(subset)} {canonicalize_type!r} nodes ...")
-        clusters = canonicalize(backend, subset, log=log)
+        clusters = canonicalize(backend, subset, batch_size=canonicalize_batch_size, log=log)
         payload["canonical"]["clusters"] = clusters
         absorbed = sum(len(c["member_ids"]) for c in clusters)
         log(f"    -> {len(clusters)} canonical (absorbed {absorbed})")
