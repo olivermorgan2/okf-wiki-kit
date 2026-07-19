@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.4.0 — 2026-07-19
+
+Clears the remaining backlog after the v0.3.0 field-report fixes.
+
+### Added
+- `okf serve --transport http` (with `--host`/`--port`) — serves the MCP
+  server over FastMCP streamable-http at `/mcp`. `stdio` remains the default
+  and is byte-identical to before; `--register` always registers the stdio
+  form (what MCP clients spawn).
+- Opt-in integration tests (`tests/test_integration.py`) gated on
+  `OKF_TEST_VAULT` (and `OKF_TEST_PROVIDER` for the embedding layer),
+  exercising a real vault and real embeddings alongside the fake-based units.
+- CI workflow (`.github/workflows/ci.yml`) running the full test matrix on
+  every push and PR (Python 3.10–3.13), cancelling superseded runs.
+
+### Fixed
+- Enrichment canonicalization no longer loses whole batches to unparseable
+  JSON: batch size dropped 100 → 30, a defensive `extract_json` (tolerates
+  code fences, leading prose, and trailing commas), a self-repair retry that
+  feeds the model back its own broken output plus the parse error, and a loud
+  stderr warning when a batch still fails (instead of a silent fallback).
+- `okf_search` under MCP now reports missing embedding keys correctly: the
+  error names the key and the "MCP servers don't inherit your shell env" rule
+  and points at `.env` / `okf doctor`, instead of the misleading
+  "Could not load the semantic index" (field report §3, now verified).
+
+### Changed
+- Default Anthropic enrichment/ask model bumped `claude-sonnet-4-6` →
+  `claude-opus-4-8` (still overridable via `--model`).
+- Evaluated `fastembed` (ONNX) as a local embedding backend and **rejected**
+  it: at 1000-char chunks, `potion-base-8M` beats `bge-small-en-v1.5` on
+  within-topic top-1 accuracy (4/4 vs 2/4), embeds ~420× faster, and avoids
+  ~96 MB of dependencies. `local` stays the default.
+- Release process documented in CONTRIBUTING.md, including the `pypi`
+  environment approval gate.
+- Test suite: 119 → 144 (plus 9 opt-in integration tests).
+
 ## v0.3.0 — 2026-07-16
 
 Fixes every finding from the first real-world field audit
